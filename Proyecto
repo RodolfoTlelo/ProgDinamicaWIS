@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+
+import bisect
+
+class OptimizadorEstudio:
+    def __init__(self):
+        self.sesiones = []  # Lista de sesiones [inicio, fin, peso, nombre_materia]
+        self.tiempo_descanso = 0  # Tiempo de descanso obligatorio (D) en minutos
+        self.solucion_optima = []  # Almacena la secuencia optima de sesiones
+    
+    def agregar_sesion(self, inicio, fin, peso, materia):
+
+        # Convertir tiempos si estan en formato string HH:MM
+        if isinstance(inicio, str):
+            inicio = self._convertir_hora_a_minutos(inicio)
+        if isinstance(fin, str):
+            fin = self._convertir_hora_a_minutos(fin)
+        
+        # Validar que inicio sea menor que fin
+        if inicio >= fin:
+            raise ValueError("El tiempo de inicio debe ser menor que el tiempo de fin")
+        
+        self.sesiones.append([inicio, fin, peso, materia])
+    
+    def _convertir_hora_a_minutos(self, hora_str):
+        """Convierte un string de formato HH:MM a minutos totales."""
+        h, m = map(int, hora_str.split(':'))
+        return h * 60 + m
+    
+    def _convertir_minutos_a_hora(self, minutos):
+        """Convierte minutos totales a formato HH:MM."""
+        h = minutos // 60
+        m = minutos % 60
+        return f"{h:02d}:{m:02d}"
+    
+    def establecer_tiempo_descanso(self, minutos):
+        """Establece el tiempo de descanso obligatorio entre sesiones (D)."""
+        self.tiempo_descanso = minutos
+    
+    def _encontrar_ultima_compatible(self, idx):
+        """
+         Calcula p(i): el índice de la ultima sesion j compatible con la sesion i.
+         Se considera compatible si end[j] + D ≤ start[i], es decir,
+         si hay al menos D minutos de descanso entre ambas sesiones.
+         Este calculo se realiza mediante busqueda binaria para mantener eficiencia O(log n).
+        """
+        tiempos_fin_con_descanso = [s[1] + self.tiempo_descanso for s in self.sesiones[:idx]]
+        tiempo_inicio_actual = self.sesiones[idx][0]
+        
+        # Encuentra el indice del ultimo elemento que es menor o igual a tiempo_inicio_actual
+        pos = bisect.bisect_right(tiempos_fin_con_descanso, tiempo_inicio_actual)
+        if pos > 0:
+            return pos - 1
+        return -1  # No hay sesion compatible
+    
+    def optimizar(self):
+        """
+        Implementa el algoritmo de Weighted Interval Scheduling con programacion dinamica
+        para encontrar la mejor combinacion de sesiones de estudio.
+        
+        Returns:
+            tuple: (beneficio_maximo, lista_de_sesiones_optimas)
+        """
+        if not self.sesiones:
+            return 0, []
+        
+        # Ordena sesiones por tiempo de finalizacion
+        self.sesiones.sort(key=lambda x: x[1])
+        
+        n = len(self.sesiones)
+        # Vector p(i): para cada sesion i, encuentra la ultima sesion compatible
+        p = [-1] * n
+        for i in range(n):
+            p[i] = self._encontrar_ultima_compatible(i)
+        
+        # Inicializar tabla de programacion dinamica
+        OPT = [0] * (n + 1)
+        
+        # Llenar la tabla OPT usando la relacion de recurrencia
+        for i in range(1, n + 1):
+            # El valor de incluir la sesion i-1
+            incluir = self.sesiones[i-1][2]  # Peso de la sesion i-1
+            if p[i-1] != -1:
+                incluir += OPT[p[i-1] + 1]
+            
+            # Maximo entre incluir o no incluir la sesion i-1
+            OPT[i] = max(OPT[i-1], incluir)
+        
+        # Reconstruir la solucion optima
+        self.solucion_optima = self._reconstruir_solucion(OPT, p)
+        
+        return OPT[n], self.solucion_optima
+    
+    def _reconstruir_solucion(self, OPT, p):
+        """
+        Reconstruye la secuencia optima de sesiones a partir de la tabla OPT y el vector p.
+        
+        Returns:
+            list: Lista de sesiones seleccionadas en la solucion optima
+        """
+        resultado = []
+        i = len(self.sesiones)
+        
+        while i > 0:
+            # Si OPT[i] es diferente de OPT[i-1], significa que incluimos la sesion i-1
+            if i == 0 or OPT[i] != OPT[i-1]:
+                # Agregar la sesion a la solucion
+                sesion = self.sesiones[i-1].copy()
+                sesion[0] = self._convertir_minutos_a_hora(sesion[0])  # Convertir a formato HH:MM
+                sesion[1] = self._convertir_minutos_a_hora(sesion[1])  # Convertir a formato HH:MM
+                resultado.append(sesion)
+                # Saltar a la ultima sesion compatible
+                i = p[i-1] + 1
+            else:
+                i -= 1
+        
+        # Ordenar resultado por tiempo de inicio
+        resultado.sort(key=lambda x: self._convertir_hora_a_minutos(x[0]))
+        return resultado
+    
+    def imprimir_horario_optimo(self):
+        """Imprime el horario optimo de estudio."""
+        if not self.solucion_optima:
+            print("No se ha calculado un horario optimo todavía. Ejecute el metodo 'optimizar' primero.")
+            return
+        
+        print("\n===== HORARIO OPTIMO DE ESTUDIO =====")
+        print("| Hora Inicio | Hora Fin  | Materia           | Peso |")
+        print("|-------------|-----------|-------------------|------|")
+        
+        beneficio_total = 0
+        for sesion in self.solucion_optima:
+            inicio, fin, peso, materia = sesion
+            beneficio_total += peso
+            print(f"| {inicio}      | {fin}     | {materia:<17} | {peso:<4} |")
+        
+        print("\nBeneficio total del horario:", beneficio_total)
+        print("==================================")
+
+
+def main():
+    """Funcion principal para la demostracion del programa."""
+    optimizador = OptimizadorEstudio()
+    
+    print("===== OPTIMIZADOR DE TIEMPO DE ESTUDIO =====")
+    print("Este programa te ayuda a organizar tus sesiones de estudio de manera optima.")
+    
+    # Pedir tiempo de descanso
+    tiempo_descanso = int(input("Ingresa el tiempo de descanso obligatorio entre sesiones (en minutos): "))
+    optimizador.establecer_tiempo_descanso(tiempo_descanso)
+    
+    # Ingreso de sesiones de estudio
+    print("\nIngreso de sesiones de estudio:")
+    print("Ingresa los datos de cada sesion. Para terminar, deja vacío el campo de materia.")
+    
+    num_sesion = 1
+    while True:
+        print(f"\nSesion #{num_sesion}")
+        materia = input("Nombre de la materia (dejar vacío para terminar): ")
+        if not materia:
+            break
+        
+        inicio = input("Hora de inicio (formato HH:MM): ")
+        fin = input("Hora de fin (formato HH:MM): ")
+        
+        try:
+            peso = int(input("Peso/Importancia (1-10): "))
+            optimizador.agregar_sesion(inicio, fin, peso, materia)
+            num_sesion += 1
+        except ValueError as e:
+            print(f"Error: {e}. Intentalo de nuevo.")
+    
+    if num_sesion > 1:
+        # Optimizar y mostrar resultados
+        beneficio, _ = optimizador.optimizar()
+        optimizador.imprimir_horario_optimo()
+    else:
+        print("No se ingresaron sesiones de estudio.")
